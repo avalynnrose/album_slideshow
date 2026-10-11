@@ -25,7 +25,7 @@ Assistant entities.
 ## Features
 
 - Automatic slideshows with adjustable timing, album refresh, and manual Previous/Next.
-- Pause/resume and a configurable rendered-frame buffer for quick navigation.
+- Pause/resume, an optional pause while no dashboard is showing the slideshow, and a configurable rendered-frame buffer for quick navigation.
 - Hide and restore photos per slideshow without changing the source library.
 - Optional on-demand or always-visible navigation and photo-management controls.
 - Pair portrait or landscape photos, choose cover/contain/blur, and set the aspect ratio.
@@ -129,7 +129,7 @@ Without the sync blueprint, the background can lag behind the camera, so
 - [Rendering options](docs/reference.md#rendering-options): pairing, fill modes, aspect ratios, and transparent dividers.
 
 <a id="-pause--resume"></a>
-- [Pause and navigation](docs/reference.md#pause-and-navigation): manual navigation while paused and the rendered-frame buffer.
+- [Pause and navigation](docs/reference.md#pause-and-navigation): manual navigation while paused, pausing when not viewed, and the rendered-frame buffer.
 
 <a id="-entities-created"></a><a id="-camera"></a><a id="-buttons"></a><a id="-sensors"></a>
 - [Entities](docs/reference.md#entities-created): camera, buttons, and diagnostic sensors.

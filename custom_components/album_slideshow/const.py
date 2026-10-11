@@ -351,6 +351,13 @@ DEFAULT_IMAGE_CACHE_MB = 75
 # Previous/Next can swap these JPEGs immediately without downloading,
 # composing, or encoding during the button press.
 DEFAULT_NAVIGATION_BUFFER_SIZE = 2
+# "Pause when not viewed": each visible card checks in every
+# VIEWER_HEARTBEAT_SECONDS (the card hard-codes the same value); the
+# slideshow holds once nothing has checked in for VIEWER_GRACE_SECONDS, so
+# one or two missed check-ins or a page reload never pause it.
+VIEWER_HEARTBEAT_SECONDS = 20
+VIEWER_GRACE_SECONDS = 60
+WS_VIEWER_HEARTBEAT = "album_slideshow/viewer_heartbeat"
 
 MAX_RESOLUTION_OPTIONS = ["480p", "720p", "1080p", "1440p", "4K (2160p)", "original"]
 DEFAULT_MAX_RESOLUTION = "1080p"

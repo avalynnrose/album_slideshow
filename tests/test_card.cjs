@@ -6,7 +6,7 @@ const test = require("node:test");
 
 const filename = path.join(__dirname, "../custom_components/album_slideshow/www/album-slideshow-card.js");
 const source = fs.readFileSync(filename, "utf8");
-const context = vm.createContext({ console });
+const context = vm.createContext({ console, setInterval: () => 0, clearInterval: () => {} });
 vm.runInContext(source.slice(0, source.indexOf("\ndefineAlbumSlideshowCards();")), context);
 const PhotoControls = vm.runInContext("PhotoControls", context);
 const Card = vm.runInContext("createAlbumSlideshowCardClass(class {})", context);
@@ -1601,4 +1601,133 @@ test("re-rendering the same photo fades instead of playing a new transition", ()
   load(3, ["p2"]);
   load(4, ["p2", "p3"]);
   assert.equal(JSON.stringify(swaps), "[true,false,false]");
+});
+
+function viewerCardFixture() {
+  const intervals = new Map();
+  let nextInterval = 0;
+  const previous = { setInterval: context.setInterval, clearInterval: context.clearInterval, document: context.document };
+  context.setInterval = (callback, delay) => { intervals.set(++nextInterval, { callback, delay }); return nextInterval; };
+  context.clearInterval = id => intervals.delete(id);
+  const listeners = new Map();
+  context.document = {
+    visibilityState: "visible",
+    addEventListener: (type, listener) => listeners.set(type, listener),
+    removeEventListener: (type, listener) => { if (listeners.get(type) === listener) listeners.delete(type); },
+  };
+  const sent = [];
+  const card = Object.create(Card.prototype);
+  card._config = { entity: "camera.test" };
+  card._rendered = true;
+  card._maybeSwap = () => {};
+  card._setupPhotoControlsReveal = () => {};
+  card._captionResizeObserver = { observe() {}, disconnect() {} };
+  card._hass = {
+    states: { "camera.test": { attributes: { entry_id: "album" } } },
+    callWS: message => { sent.push(message); return Promise.resolve(); },
+  };
+  const restore = () => Object.assign(context, previous);
+  const setVisibility = state => { context.document.visibilityState = state; listeners.get("visibilitychange")?.(); };
+  return { card, intervals, listeners, sent, restore, setVisibility };
+}
+
+test("a visible card checks in right away and then every 20 seconds", () => {
+  const { card, intervals, sent, restore } = viewerCardFixture();
+  try {
+    card.isConnected = true;
+    card.connectedCallback();
+    assert.deepEqual(JSON.parse(JSON.stringify(sent)), [{ type: "album_slideshow/viewer_heartbeat", entry_id: "album" }]);
+    assert.equal(intervals.size, 1);
+    const [{ callback, delay }] = intervals.values();
+    assert.equal(delay, 20000);
+    callback();
+    assert.equal(sent.length, 2);
+    // Ordinary hass updates do not add extra check-ins or timers.
+    card.hass = card._hass;
+    assert.equal(sent.length, 2);
+    assert.equal(intervals.size, 1);
+  } finally {
+    restore();
+  }
+});
+
+test("hidden pages and removed cards stop checking in; returning resumes at once", () => {
+  const { card, intervals, listeners, sent, restore, setVisibility } = viewerCardFixture();
+  try {
+    card.isConnected = true;
+    card.connectedCallback();
+    setVisibility("hidden");
+    assert.equal(intervals.size, 0);
+    assert.equal(sent.length, 1);
+    setVisibility("visible");
+    assert.equal(sent.length, 2);
+    assert.equal(intervals.size, 1);
+    card._controlsReveal = { dispose() {} };
+    card.isConnected = false;
+    card.disconnectedCallback();
+    assert.equal(intervals.size, 0);
+    assert.equal(listeners.size, 0);
+    assert.equal(sent.length, 2);
+  } finally {
+    restore();
+  }
+});
+
+test("check-ins wait for the camera's entry and follow a change of camera", () => {
+  const { card, intervals, sent, restore } = viewerCardFixture();
+  try {
+    card.isConnected = true;
+    const attrs = card._hass.states["camera.test"].attributes;
+    delete attrs.entry_id;
+    card.connectedCallback();
+    assert.equal(sent.length, 0);
+    assert.equal(intervals.size, 0);
+    attrs.entry_id = "album";
+    card.hass = card._hass;
+    assert.equal(sent.length, 1);
+    card._hass.states["camera.other"] = { attributes: { entry_id: "second" } };
+    card._config = { entity: "camera.other" };
+    card.hass = card._hass;
+    assert.equal(sent.at(-1).entry_id, "second");
+    assert.equal(intervals.size, 1);
+  } finally {
+    restore();
+  }
+});
+
+test("a failed check-in is swallowed and retried on the next beat", async () => {
+  const { card, intervals, restore } = viewerCardFixture();
+  try {
+    let attempts = 0;
+    card._hass.callWS = () => { attempts += 1; return Promise.reject(new Error("unknown_command")); };
+    card.isConnected = true;
+    card.connectedCallback();
+    await new Promise(resolve => setImmediate(resolve));
+    [...intervals.values()][0].callback();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(attempts, 2);
+  } finally {
+    restore();
+  }
+});
+
+test("the editor offers Pause when not viewed beside Pause and drives its switch", () => {
+  const Editor = vm.runInContext("createAlbumSlideshowCardEditorClass(class { attachShadow() {} })", context);
+  const editor = new Editor();
+  editor._siblings = { paused: "switch.pause", pause_when_unwatched: "switch.pause_when_not_viewed" };
+  editor._hass = { states: {
+    "switch.pause": { state: "off", attributes: {} },
+    "switch.pause_when_not_viewed": { state: "on", attributes: {} },
+  } };
+  const names = editor._liveSchema().map(field => field.name);
+  assert.equal(JSON.stringify(names.slice(0, 2)), JSON.stringify(["live_paused", "live_pause_when_unwatched"]));
+  assert.equal(editor._liveDataFromStates().live_pause_when_unwatched, true);
+  editor._liveData = editor._liveDataFromStates();
+  const calls = [];
+  editor._hass.callService = (...args) => calls.push(args);
+  editor.dispatchEvent = () => { throw new Error("Live setting leaked into card YAML"); };
+  editor._valueChanged({ stopPropagation() {}, detail: { value: { ...editor._liveData, live_pause_when_unwatched: false } } });
+  assert.equal(JSON.stringify(calls), JSON.stringify([
+    ["switch", "turn_off", { entity_id: "switch.pause_when_not_viewed" }],
+  ]));
 });

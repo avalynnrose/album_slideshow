@@ -13,7 +13,11 @@ from .store import SlideshowStore
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     store: SlideshowStore = hass.data[DOMAIN][entry.entry_id]["store"]
-    async_add_entities([PauseSwitch(entry, store), CropDebugSwitch(entry, store)])
+    async_add_entities([
+        PauseSwitch(entry, store),
+        PauseWhenUnwatchedSwitch(entry, store),
+        CropDebugSwitch(entry, store),
+    ])
 
 
 class PauseSwitch(SwitchEntity, RestoreEntity):
@@ -53,6 +57,49 @@ class PauseSwitch(SwitchEntity, RestoreEntity):
         old = await self.async_get_last_state()
         if old is not None and old.state in ("on", "off"):
             self.store.paused = old.state == "on"
+            self.store.notify()
+
+
+class PauseWhenUnwatchedSwitch(SwitchEntity, RestoreEntity):
+    """Hold the slideshow while no card or live stream is showing it."""
+
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+    _attr_icon = "mdi:eye-off-outline"
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, entry: ConfigEntry, store: SlideshowStore) -> None:
+        self.entry = entry
+        self.store = store
+        self._attr_unique_id = f"{entry.entry_id}_pause_when_unwatched"
+        self._attr_name = "Pause when not viewed"
+
+    @property
+    def is_on(self) -> bool:
+        return bool(self.store.pause_when_unwatched)
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, self.entry.entry_id)},
+            "name": f"Album Slideshow {self.entry.title}",
+            "manufacturer": "Album Slideshow",
+        }
+
+    async def async_turn_on(self, **kwargs) -> None:
+        self.store.pause_when_unwatched = True
+        self.store.notify()
+
+    async def async_turn_off(self, **kwargs) -> None:
+        self.store.pause_when_unwatched = False
+        self.store.notify()
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.store.add_listener(self.async_write_ha_state)
+        old = await self.async_get_last_state()
+        if old is not None and old.state in ("on", "off"):
+            self.store.pause_when_unwatched = old.state == "on"
             self.store.notify()
 
 

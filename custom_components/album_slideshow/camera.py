@@ -38,6 +38,7 @@ from . import image_processing as ip
 from . import playlist
 from .coordinator import AlbumCoordinator, MediaItem
 from .store import SlideshowStore
+from .viewers import async_get_tracker
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -341,6 +342,8 @@ class AlbumSlideshowCamera(Camera):
         self._consecutive_failures: int = 0
         self._render_task: asyncio.Task | None = None
         self._render_settings = self._current_render_settings()
+        self._viewers = async_get_tracker(hass)
+        self._unsub_viewers = None
 
         def _on_coordinator_update() -> None:
             previous_items = self._effective_cache[1] if self._effective_cache else None
@@ -381,12 +384,18 @@ class AlbumSlideshowCamera(Camera):
         # offset based on entry_id keeps the pattern stable across
         # restarts. Up to ~3 s spread across albums.
         startup_delay = (hash(self.entry.entry_id) % 3000) / 1000.0
+        self._unsub_viewers = self._viewers.async_track(
+            self.entry.entry_id, self._on_viewers_change
+        )
         self._render_task = self.hass.async_create_background_task(
             self._render_loop(initial_delay=startup_delay),
             name="album_slideshow_render_loop",
         )
 
     async def async_will_remove_from_hass(self) -> None:
+        if self._unsub_viewers is not None:
+            self._unsub_viewers()
+            self._unsub_viewers = None
         preload_task = self._preload_task
         self._cancel_preload()
         if self._render_task is not None:
@@ -481,6 +490,7 @@ class AlbumSlideshowCamera(Camera):
             "shuffle_age_bias": int(self.store.shuffle_age_bias),
             "missing_date_mode": self.store.missing_date_mode,
             "paused": bool(self.store.paused),
+            "paused_unwatched": self._paused_unwatched,
             "refresh_hours": int(self.store.refresh_hours),
             "aspect_ratio": self.store.aspect_ratio,
             "pair_divider_px": int(self.store.pair_divider_px),
@@ -821,12 +831,17 @@ class AlbumSlideshowCamera(Camera):
         # that stub out homeassistant.
         from homeassistant.components.camera import async_get_still_stream
 
-        return await async_get_still_stream(
-            request,
-            self.async_camera_image,
-            self.content_type,
-            self.frame_interval,
-        )
+        # Someone is watching the stream, so "Pause when not viewed" holds off.
+        close = self._viewers.async_add_stream(self.entry.entry_id)
+        try:
+            return await async_get_still_stream(
+                request,
+                self.async_camera_image,
+                self.content_type,
+                self.frame_interval,
+            )
+        finally:
+            close()
 
     # Older HA cores may dispatch via the alt name; alias for compatibility.
     async def async_handle_async_mjpeg_stream(self, request):
@@ -1229,7 +1244,7 @@ class AlbumSlideshowCamera(Camera):
         if self._timeline_dirty:
             return True
         try:
-            if self.store.paused:
+            if self._held:
                 await self._interrupt_event.wait()
             else:
                 await asyncio.wait_for(
@@ -1239,6 +1254,33 @@ class AlbumSlideshowCamera(Camera):
             return True
         except asyncio.TimeoutError:
             return False
+
+    @property
+    def _paused_unwatched(self) -> bool:
+        """Held by "Pause when not viewed": no card or stream is showing us."""
+        return bool(self.store.pause_when_unwatched) and self._viewers.is_unwatched(
+            self.entry.entry_id
+        )
+
+    @property
+    def _held(self) -> bool:
+        """Whether the slide timer is stopped (manual navigation still works)."""
+        return bool(self.store.paused) or self._paused_unwatched
+
+    def _on_viewers_change(self) -> None:
+        if not self.store.pause_when_unwatched:
+            return
+        _LOGGER.debug(
+            "Album Slideshow %s: %s",
+            self.entry.title,
+            "paused, no one is viewing it" if self._paused_unwatched
+            else "resumed, a viewer is back",
+        )
+        # Wake the render loop; a returning viewer gets a full interval on
+        # the slide they find.
+        self._slide_deadline = None
+        self._interrupt_event.set()
+        self.async_write_ha_state()
 
     async def _render_loop(self, initial_delay: float = 0.0) -> None:
         """Display buffered frames on command/timer and refill them in the background."""
@@ -1284,7 +1326,7 @@ class AlbumSlideshowCamera(Camera):
                 interrupted = await self._wait_or_interrupt(
                     max(0.0, self._slide_deadline - loop.time())
                 )
-                if not interrupted and not self.store.paused:
+                if not interrupted and not self._held:
                     async with self._navigation_lock:
                         if (
                             not self._timeline_dirty
