@@ -59,6 +59,8 @@ _SKIP_SEARCH_LIMIT = 30
 
 _MAX_RENDER_ATTEMPTS = 10
 
+_MB = 1024 * 1024
+
 # Fixed floor (in items) for the pairing cooldown exclusion zone, applied on
 # each side of the current index in addition to the percentage-based radius.
 # Keeps tiny albums from pairing consecutive/near-consecutive shots even when
@@ -213,6 +215,10 @@ class _DownloadCache:
     def put(self, url: str, data: bytes) -> None:
         if len(data) > self._max_bytes:
             # Item exceeds the entire cache budget; skip caching but don't raise.
+            _LOGGER.debug(
+                "Image cache: not caching %.1f MB image, larger than the %.1f MB budget",
+                len(data) / _MB, self._max_bytes / _MB,
+            )
             return
         if url in self._cache:
             self._total_bytes -= len(self._cache[url])
@@ -222,13 +228,28 @@ class _DownloadCache:
         self._evict()
 
     def resize(self, max_bytes: int) -> None:
-        self._max_bytes = max(max_bytes, 1)
+        max_bytes = max(max_bytes, 1)
+        if max_bytes != self._max_bytes:
+            _LOGGER.debug(
+                "Image cache: budget %.1f MB -> %.1f MB (%.1f MB in use)",
+                self._max_bytes / _MB, max_bytes / _MB, self._total_bytes / _MB,
+            )
+        self._max_bytes = max_bytes
         self._evict()
 
     def _evict(self) -> None:
+        count = freed = 0
         while self._total_bytes > self._max_bytes and self._cache:
             _, data = self._cache.popitem(last=False)
             self._total_bytes -= len(data)
+            count += 1
+            freed += len(data)
+        if count:
+            _LOGGER.debug(
+                "Image cache: evicted %d image(s) (%.1f MB), now %.1f/%.1f MB, %d cached",
+                count, freed / _MB, self._total_bytes / _MB, self._max_bytes / _MB,
+                len(self._cache),
+            )
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
