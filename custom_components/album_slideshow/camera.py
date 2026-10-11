@@ -1295,8 +1295,15 @@ class AlbumSlideshowCamera(Camera):
         enrich = getattr(getattr(self, "coordinator", None), "async_enrich_item", None)
         if enrich is None:
             return
+        loop = asyncio.get_running_loop()
+        started = loop.time()
         try:
-            await asyncio.wait_for(asyncio.shield(enrich(item)), _ENRICH_WAIT_SECONDS)
+            fetched = await asyncio.wait_for(asyncio.shield(enrich(item)), _ENRICH_WAIT_SECONDS)
+            if fetched:
+                _LOGGER.debug(
+                    "Album Slideshow: fetched metadata for %s in %d ms before display",
+                    getattr(item, "filename", None), (loop.time() - started) * 1000,
+                )
         except asyncio.CancelledError:
             raise
         except Exception as err:  # noqa: BLE001 - render without metadata
