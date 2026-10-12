@@ -85,3 +85,20 @@ def test_resize_zero_or_negative_clamps_to_one():
     # After resize, total must be <= 1 byte; entry must have been evicted.
     assert cache.total_bytes == 0
     assert cache.get("http://a") is None
+
+
+def test_evictions_and_budget_changes_are_logged(caplog):
+    cache = _DownloadCache(max_bytes=10)
+    with caplog.at_level("DEBUG", logger="custom_components.album_slideshow.camera"):
+        cache.put("http://a", b"12345")
+        cache.put("http://b", b"67890")
+        assert not caplog.records  # within budget: nothing evicted, nothing logged
+        cache.put("http://c", b"ABCDE")
+        cache.resize(10)  # unchanged budget: no line
+        cache.resize(5)
+    messages = [record.getMessage() for record in caplog.records]
+    assert len(messages) == 3
+    assert messages[0].startswith("Image cache: evicted 1 image(s)")
+    assert messages[1].startswith("Image cache: budget 0.0 MB -> 0.0 MB")
+    assert messages[2].startswith("Image cache: evicted 1 image(s)")
+    assert messages[2].endswith("1 cached")
