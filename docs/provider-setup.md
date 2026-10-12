@@ -177,8 +177,9 @@ If the stored connection fails, the flow first asks for a working URL and key.
 Videos are off by default. Turn on **Include videos** when adding the source
 or later under **Configure**.
 
-- The camera shows each video as a still poster frame, so the more-info
-  dialog, picture cards and casting keep working.
+- The [Album Slideshow card](card-guide.md) plays each video over a still
+  poster frame. Anything else that shows the camera (the more-info
+  dialog, picture cards, casting) shows only the poster.
 - A video slide stays up for the length of the clip. Clips shorter than 5
   seconds loop until 5 seconds have passed. Longer clips are cut off at the
   **Max video length** setting (default 60 seconds), which is created only
@@ -190,11 +191,16 @@ or later under **Configure**.
   clips play in most browsers.
   Each screen streams through Home Assistant, so expect more network traffic
   than photos.
+- If a clip can't load, or the browser blocks autoplay, the poster stays up
+  and the slideshow carries on.
+- Videos play muted unless the card's `video_audio` option turns sound on;
+  see the [Card Guide](card-guide.md#full-options).
 
 **Live Photos.** Turn on **Play Live Photo motion** (also off by default) to
-stream an iPhone Live Photo's motion clip along with its still. A Live Photo
-stays a photo: it uses the normal slide interval and can be paired. Live Photo
-motion clips are never shown as separate videos.
+play an iPhone Live Photo's motion clip over its still. A Live Photo stays a
+photo: it uses the normal slide interval and can be paired. On its own, its
+motion plays once and then fades back to the still; when paired, only the
+stills show. Live Photo motion clips are never shown as separate videos.
 
 ### Notes
 
@@ -256,7 +262,7 @@ marker but do not gain face recognition.
 ### Immich Limits
 
 - Requires an Immich server reachable from Home Assistant and an API key
-- Videos are skipped unless **Include videos** is on
+- Videos are skipped unless **Include videos** is on, and they play only in the Album Slideshow card
 - Home Assistant fetches and re-serves images, so the Immich server does not need to be reachable from the dashboard client (and the API key never leaves the server)
 - Location, description and faces are read per photo: just before it is shown, and for the rest of the library by a background pass
 
