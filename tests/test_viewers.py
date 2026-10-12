@@ -85,6 +85,24 @@ def test_open_streams_count_until_closed_then_the_grace_period_restarts():
     assert asyncio.run(run()) == [True, False, True]
 
 
+def test_restarting_the_grace_period_counts_the_album_as_watched_again():
+    async def run():
+        tracker = viewers.ViewerTracker(GRACE)
+        changes, _untrack = _tracked(tracker)
+        await asyncio.sleep(GRACE * 1.5)
+        assert tracker.is_unwatched("album")
+        # Quietly: the camera only does this as the setting turns on.
+        tracker.async_restart_grace("album")
+        assert not tracker.is_unwatched("album")
+        await asyncio.sleep(GRACE / 2)
+        assert not tracker.is_unwatched("album")
+        await asyncio.sleep(GRACE)
+        assert tracker.is_unwatched("album")
+        return changes
+
+    assert asyncio.run(run()) == [True, True]
+
+
 def test_albums_are_tracked_independently_and_forgotten_when_untracked():
     async def run():
         tracker = viewers.ViewerTracker(GRACE)
@@ -184,6 +202,28 @@ def test_the_render_loop_does_not_advance_while_unwatched(monkeypatch):
 
     asyncio.run(run())
     assert advanced
+
+
+def test_turning_the_setting_on_gives_cards_a_grace_period_to_check_in():
+    from .test_camera_next_slide import _history_cam
+
+    cam, _update, store, _items, _frames = _history_cam()
+    restarts = []
+    cam._viewers = SimpleNamespace(
+        async_restart_grace=restarts.append, is_unwatched=lambda entry_id: False,
+    )
+    cam._unsub_viewers = lambda: None
+    store.pause_when_unwatched = True
+    store.notify()
+    store.notify()
+    assert restarts == ["test"]
+    assert cam.extra_state_attributes["pause_when_unwatched"] is True
+    store.pause_when_unwatched = False
+    store.notify()
+    assert cam.extra_state_attributes["pause_when_unwatched"] is False
+    store.pause_when_unwatched = True
+    store.notify()
+    assert restarts == ["test", "test"]
 
 
 def test_the_setting_keeps_rendered_history_like_pause():

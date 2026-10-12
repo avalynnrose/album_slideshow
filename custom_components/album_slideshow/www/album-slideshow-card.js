@@ -792,9 +792,10 @@ function createAlbumSlideshowCardClass(Base) {
     }
   }
 
-  /** Check in while this card is on a visible page; stop once it's not. */
+  /** Check in while this card is on a visible page and Pause when not viewed is on. */
   _syncViewerHeartbeat() {
-    const entryId = this._hass?.states?.[this._config?.entity]?.attributes?.entry_id;
+    const attrs = this._hass?.states?.[this._config?.entity]?.attributes;
+    const entryId = attrs?.pause_when_unwatched ? attrs.entry_id : null;
     if (!this.isConnected || globalThis.document?.visibilityState === "hidden" || !entryId) {
       clearInterval(this._viewerTimer);
       this._viewerTimer = null;

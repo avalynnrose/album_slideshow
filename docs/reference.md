@@ -122,7 +122,7 @@ keeps advancing, downloading and preparing slides even when no dashboard is
 open. Turn on **Pause when not viewed** to stop that:
 
 - While a slideshow card is on screen, it checks in with the integration every
-  20 seconds. A live camera view (the more-info dialog, or a picture card in
+  20 seconds. Cards only check in while this setting is on. A live camera view (the more-info dialog, or a picture card in
   live mode) counts for as long as it stays open.
 - After a minute with no check-ins, the slideshow holds its current slide.
   Once the upcoming-slide buffer is full, nothing more is downloaded or
@@ -205,6 +205,7 @@ The slideshow camera exposes per-frame metadata as attributes (use with `state_a
 | `caption_frames` | list | Structured per-image metadata: one entry for a normal slide, two (top/left first) for a pair. Each entry has `captured_at`, `location`, `latitude`, `longitude`, `description`, and the camera/exposure fields above. The card can display these in captions. |
 | `pair_orientation` | string \| null | How a paired slide is split: `horizontal` (left/right) or `vertical` (top/bottom). `null` for single slides. |
 | `paused` | bool | Whether the slideshow is paused |
+| `pause_when_unwatched` | bool | Whether the **Pause when not viewed** switch is on; cards only check in while it is |
 | `paused_unwatched` | bool | Whether **Pause when not viewed** is holding the slideshow because nothing is showing it |
 | `date_filter` | string | Active date filter mode |
 | `custom_lookback_days` | integer | Number of days used by the custom date filter |

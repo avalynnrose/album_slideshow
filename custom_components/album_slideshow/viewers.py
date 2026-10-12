@@ -1,6 +1,8 @@
 """Track whether anyone is looking at a slideshow.
 
-Dashboard cards check in over the websocket while they are on screen, and
+Dashboard cards check in over the websocket while they are on screen (only
+while "Pause when not viewed" is on, which the camera reports through its
+``pause_when_unwatched`` attribute), and
 live camera streams (more-info, picture-glance) count for as long as they
 stay open. An album is *unwatched* once ``VIEWER_GRACE_SECONDS`` pass with
 neither. The camera holds its slide timer while unwatched if the user turned
@@ -66,6 +68,18 @@ class ViewerTracker:
                 del self._albums[entry_id]
 
         return untrack
+
+    @callback
+    def async_restart_grace(self, entry_id: str) -> None:
+        """Count the album as watched again for a fresh grace period.
+
+        Cards only check in while "Pause when not viewed" is on, so turning it
+        on gives them time to start before the slideshow can pause.
+        """
+        album = self._albums.setdefault(entry_id, _AlbumViewers())
+        album.unwatched = False
+        if not album.streams:
+            self._restart_timer(entry_id, album)
 
     @callback
     def async_heartbeat(self, entry_id: str) -> None:

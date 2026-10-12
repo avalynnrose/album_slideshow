@@ -1623,7 +1623,7 @@ function viewerCardFixture() {
   card._setupPhotoControlsReveal = () => {};
   card._captionResizeObserver = { observe() {}, disconnect() {} };
   card._hass = {
-    states: { "camera.test": { attributes: { entry_id: "album" } } },
+    states: { "camera.test": { attributes: { entry_id: "album", pause_when_unwatched: true } } },
     callWS: message => { sent.push(message); return Promise.resolve(); },
   };
   const restore = () => Object.assign(context, previous);
@@ -1685,11 +1685,34 @@ test("check-ins wait for the camera's entry and follow a change of camera", () =
     attrs.entry_id = "album";
     card.hass = card._hass;
     assert.equal(sent.length, 1);
-    card._hass.states["camera.other"] = { attributes: { entry_id: "second" } };
+    card._hass.states["camera.other"] = { attributes: { entry_id: "second", pause_when_unwatched: true } };
     card._config = { entity: "camera.other" };
     card.hass = card._hass;
     assert.equal(sent.at(-1).entry_id, "second");
     assert.equal(intervals.size, 1);
+  } finally {
+    restore();
+  }
+});
+
+test("cards only check in while Pause when not viewed is on", () => {
+  const { card, intervals, sent, restore } = viewerCardFixture();
+  try {
+    card.isConnected = true;
+    const attrs = card._hass.states["camera.test"].attributes;
+    attrs.pause_when_unwatched = false;
+    card.connectedCallback();
+    card.hass = card._hass;
+    assert.equal(sent.length, 0);
+    assert.equal(intervals.size, 0);
+    attrs.pause_when_unwatched = true;
+    card.hass = card._hass;
+    assert.equal(sent.length, 1);
+    assert.equal(intervals.size, 1);
+    attrs.pause_when_unwatched = false;
+    card.hass = card._hass;
+    assert.equal(intervals.size, 0);
+    assert.equal(sent.length, 1);
   } finally {
     restore();
   }

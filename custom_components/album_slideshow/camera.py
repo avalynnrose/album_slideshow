@@ -355,7 +355,14 @@ class AlbumSlideshowCamera(Camera):
 
         coordinator.async_add_listener(_on_coordinator_update)
 
+        self._pause_when_unwatched = bool(store.pause_when_unwatched)
+
         def _on_store_change() -> None:
+            enabled = bool(self.store.pause_when_unwatched)
+            if enabled and not self._pause_when_unwatched and self._unsub_viewers is not None:
+                # Cards stay quiet while the setting is off; let them check in.
+                self._viewers.async_restart_grace(self.entry.entry_id)
+            self._pause_when_unwatched = enabled
             self._download_cache.resize(self.store.image_cache_mb * 1024 * 1024)
             self._slide_deadline = None
             settings = self._current_render_settings()
@@ -490,6 +497,7 @@ class AlbumSlideshowCamera(Camera):
             "shuffle_age_bias": int(self.store.shuffle_age_bias),
             "missing_date_mode": self.store.missing_date_mode,
             "paused": bool(self.store.paused),
+            "pause_when_unwatched": bool(self.store.pause_when_unwatched),
             "paused_unwatched": self._paused_unwatched,
             "refresh_hours": int(self.store.refresh_hours),
             "aspect_ratio": self.store.aspect_ratio,
