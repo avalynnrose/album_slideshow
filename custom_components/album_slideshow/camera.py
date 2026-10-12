@@ -59,6 +59,11 @@ _SKIP_SEARCH_LIMIT = 30
 
 _MAX_RENDER_ATTEMPTS = 10
 
+# How long a render waits for an item's metadata (faces for the crop,
+# caption fields) to be fetched on demand before rendering without it.
+# Upcoming slides render ahead of time, so this rarely delays a slide.
+_ENRICH_WAIT_SECONDS = 8.0
+
 _MB = 1024 * 1024
 
 # Fixed floor (in items) for the pairing cooldown exclusion zone, applied on
@@ -1300,6 +1305,34 @@ class AlbumSlideshowCamera(Camera):
                     err,
                 )
 
+    async def _ensure_enriched(self, item: MediaItem) -> None:
+        """Fetch an item's metadata before rendering it, if still missing.
+
+        Faces steer the crop and caption fields are baked into paired slides,
+        so a slide rendered before the background pass reaches its photo
+        would otherwise be missing both. Bounded so a slow server only
+        delays the slide briefly; the fetch carries on in the background.
+        """
+        enrich = getattr(getattr(self, "coordinator", None), "async_enrich_item", None)
+        if enrich is None:
+            return
+        loop = asyncio.get_running_loop()
+        started = loop.time()
+        try:
+            fetched = await asyncio.wait_for(asyncio.shield(enrich(item)), _ENRICH_WAIT_SECONDS)
+            if fetched:
+                _LOGGER.debug(
+                    "Album Slideshow: fetched metadata for %s in %d ms before display",
+                    getattr(item, "filename", None), (loop.time() - started) * 1000,
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception as err:  # noqa: BLE001 - render without metadata
+            _LOGGER.debug(
+                "Album Slideshow: metadata for %s not ready: %r",
+                getattr(item, "filename", None), err,
+            )
+
     @property
     def _compose_semaphore(self) -> asyncio.Semaphore:
         """Return the domain-wide compose semaphore, creating it on demand.
@@ -1393,6 +1426,7 @@ class AlbumSlideshowCamera(Camera):
         ):
             return await self._compose_skip_mismatch(items, width, height, fill_mode, is_portrait_canvas)
 
+        await self._ensure_enriched(cur)
         cur_bytes = await self._fetch_bytes(cur.url)
         if not cur_bytes:
             raise RuntimeError(f"Failed to fetch image: {cur.url}")
@@ -1506,6 +1540,7 @@ class AlbumSlideshowCamera(Camera):
                     continue
                 if self._index != start:
                     self._do_advance(count, items)
+                await self._ensure_enriched(cur)
                 composed = await self._async_image_job(
                     ip.render_image, img, fill_mode, width, height, self._crop_hints(cur)
                 )
@@ -1526,6 +1561,7 @@ class AlbumSlideshowCamera(Camera):
         height: int,
         fill_mode: str,
     ) -> tuple[Image.Image | None, dict | None]:
+        await self._ensure_enriched(item)
         b = await self._fetch_bytes(item.url)
         if not b:
             return None, None
@@ -1631,6 +1667,8 @@ class AlbumSlideshowCamera(Camera):
                 continue
 
             if ip.is_portrait_item(it, img) != is_portrait_canvas:
+                # Only the chosen partner needs faces and caption fields.
+                await self._ensure_enriched(it)
                 return img, it
             ip.safe_close(img)
 
