@@ -111,6 +111,15 @@ the hidden list. Exclusions persist per slideshow and never change the source
 library. See the [hide/restore guide](docs/card-guide.md#hide-photos-from-a-slideshow)
 for gestures, paired-photo choices, and storage safeguards.
 
+## Use With View Assist
+
+The slideshow camera can also be the background of a
+[View Assist](https://github.com/dinki/View-Assist) display. View Assist's
+[Album Slideshow & Gesture Controls](https://dinki.github.io/View-Assist/docs/community-contributions/cc-sentences/album-slideshow)
+blueprints add swipe gestures and keep the background in sync with the camera.
+Without the sync blueprint, the background can lag behind the camera, so
+**Previous slide** and **Next slide** may seem to jump to a different photo.
+
 ## Settings and Automation
 
 <a id="-runtime-configuration"></a><a id="-filter--order-by-date"></a>
