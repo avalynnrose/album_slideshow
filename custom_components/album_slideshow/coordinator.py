@@ -1215,7 +1215,7 @@ class AlbumCoordinator(DataUpdateCoordinator):
         # Per-item enrichment in flight, shared by the background pass and
         # on-demand requests from the camera so an item is fetched once.
         self._enrich_inflight: dict[int, asyncio.Task] = {}
-        self._last_items_save = 0.0
+        self._last_items_save: float | None = None
 
         super().__init__(
             hass,
@@ -2844,7 +2844,8 @@ class AlbumCoordinator(DataUpdateCoordinator):
     async def _flush_enrichment(self, data: dict[str, Any]) -> None:
         """Persist progress (at most once a minute) and notify listeners."""
         now = time.monotonic()
-        if now - getattr(self, "_last_items_save", 0.0) >= _ENRICHMENT_SAVE_INTERVAL:
+        last = getattr(self, "_last_items_save", None)
+        if last is None or now - last >= _ENRICHMENT_SAVE_INTERVAL:
             self._last_items_save = now
             await self._save_cached_items(data)
         self.async_set_updated_data(data)

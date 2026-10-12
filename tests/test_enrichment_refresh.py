@@ -72,7 +72,9 @@ def test_google_items_are_left_to_the_google_pass():
     assert fetched == []
 
 
-def test_background_pass_skips_shown_items_and_saves_sparingly():
+def test_background_pass_skips_shown_items_and_saves_sparingly(monkeypatch):
+    # time.monotonic() counts from boot, so a freshly booted host reads small values.
+    monkeypatch.setattr(coordinator_module.time, "monotonic", lambda: 5.0)
     coord, fetched = _coordinator()
     items = [_item(f"p{index}") for index in range(60)]
     # The camera already enriched one on demand; the pass must skip it.
