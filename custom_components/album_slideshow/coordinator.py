@@ -1295,11 +1295,20 @@ class AlbumCoordinator(DataUpdateCoordinator):
             self._schedule_enrichment(data)
         elif self.provider in ENRICHING_PROVIDERS and items:
             # Carry forward EXIF/geocode metadata for items we've already
-            # scanned this session; new items get filled in by the
-            # background worker below.
-            prior_items = (self.data or {}).get("items") if isinstance(self.data, dict) else None
+            # scanned, this session or (after a restart) in the items cache
+            # on disk; new items get filled in by the background worker
+            # below. Session items come last so they win over the cache.
+            prior_items = list((self.data or {}).get("items") or []) if isinstance(self.data, dict) else []
+            if not self._items_cache_loaded:
+                cached = await self._load_cached_items()
+                prior_items = (cached or {}).get("items", []) + prior_items
+                self._items_cache_loaded = True
             if prior_items:
                 _merge_prior_enrichment(items, prior_items)
+                _LOGGER.debug(
+                    "Album cache: %d of %d items already have their details",
+                    sum(1 for it in items if not self._needs_enrichment(it)), len(items),
+                )
             await self._relabel_from_place_cache(items)
             self._schedule_enrichment(data)
 
@@ -1456,7 +1465,12 @@ class AlbumCoordinator(DataUpdateCoordinator):
                 "geocode_total": 0,
                 "geocode_done": 0,
             }
+            _LOGGER.debug("Album enrichment: all %d items have their details", len(items))
             return
+        _LOGGER.debug(
+            "Album enrichment: starting background pass for %d of %d items%s",
+            len(unscanned), len(items), " plus place names" if needs_geocode else "",
+        )
         self._enrich_progress = {
             "phase": "exif",
             "exif_total": len(items),
@@ -1477,14 +1491,17 @@ class AlbumCoordinator(DataUpdateCoordinator):
             _LOGGER.debug("Album cache: failed to load (%s)", err)
             return None
         if not isinstance(payload, dict):
+            _LOGGER.debug("Album cache: nothing saved yet")
             return None
 
         cached_source = payload.get("immich_source")
         if cached_source is not None and cached_source != getattr(self, "_immich_cache_source", None):
+            _LOGGER.debug("Album cache: ignoring saved items, the Immich source changed")
             return None
 
         raw_items = payload.get("items")
         if not isinstance(raw_items, list):
+            _LOGGER.debug("Album cache: ignoring saved data without an item list")
             return None
 
         items: list[MediaItem] = []
@@ -1521,6 +1538,10 @@ class AlbumCoordinator(DataUpdateCoordinator):
             except Exception:
                 continue
 
+        _LOGGER.debug(
+            "Album cache: loaded %d saved items (%d skipped as unreadable)",
+            len(items), len(raw_items) - len(items),
+        )
         self._apply_google_location_privacy(items)
         return {
             "title": payload.get("title"),
@@ -1567,6 +1588,8 @@ class AlbumCoordinator(DataUpdateCoordinator):
             await self._items_cache_store.async_save(payload)
         except Exception as err:  # pragma: no cover - storage layer
             _LOGGER.debug("Album cache: failed to save (%s)", err)
+        else:
+            _LOGGER.debug("Album cache: saved %d items", len(items))
 
     async def _update_local_folder(self) -> dict[str, Any]:
         if not self.local_path:
