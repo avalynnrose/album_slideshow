@@ -107,6 +107,12 @@ function formatClipLength(seconds) {
   return hours ? `${hours}:${String(minutes).padStart(2, "0")}:${secs}` : `${minutes}:${secs}`;
 }
 
+/** First corner that no caption or toolbar uses, for the video sound button. */
+function soundButtonCorner(captionPositions, toolbarCorner) {
+  const taken = new Set([...captionPositions, toolbarCorner]);
+  return ["top-left", "top-right", "bottom-left", "bottom-right"].find((corner) => !taken.has(corner)) ?? "top-left";
+}
+
 const CAPTION_POSITIONS = new Set([
   "top-left",
   "top-center",
@@ -883,6 +889,11 @@ function createAlbumSlideshowCardClass(Base) {
     const stageBg = c.background
       ? c.background
       : "var(--ha-card-background, var(--card-background-color, transparent))";
+    const toolbarEdge = c.caption?.position.startsWith("top") ? "bottom" : "top";
+    const [soundY, soundX] = soundButtonCorner(
+      c.captions.map((cap) => cap.position),
+      c.photo_controls === "off" ? null : `${toolbarEdge}-right`,
+    ).split("-");
     this.shadowRoot.innerHTML = `
       <style>
         :host { display: block; }
@@ -952,8 +963,8 @@ function createAlbumSlideshowCardClass(Base) {
         .video.show { opacity: 1; }
         .sound {
           position: absolute;
-          top: 8px;
-          left: 8px;
+          ${soundY}: 8px;
+          ${soundX}: 8px;
           z-index: 3;
           display: grid;
           place-items: center;
@@ -1008,7 +1019,7 @@ function createAlbumSlideshowCardClass(Base) {
           max-width: 100%; max-height: 100%; min-width: 0; overflow: hidden;
         }
         .cap-line { font-weight: inherit; flex-shrink: 0; font-variant-numeric: tabular-nums; }
-        #photo-controls { position: absolute; right: 8px; max-width: calc(100% - 16px); ${c.caption?.position.startsWith("top") ? "bottom" : "top"}: 8px; z-index: 3; }
+        #photo-controls { position: absolute; right: 8px; max-width: calc(100% - 16px); ${toolbarEdge}: 8px; z-index: 3; }
         .cap-box.cap-shadow {
           text-shadow:
             0 1px 2px rgba(0, 0, 0, 0.9),

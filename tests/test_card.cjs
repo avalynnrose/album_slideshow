@@ -2053,3 +2053,11 @@ test("the editor offers Pause when not viewed beside Pause and drives its switch
     ["switch", "turn_off", { entity_id: "switch.pause_when_not_viewed" }],
   ]));
 });
+
+test("the video sound button takes a corner without a caption or the toolbar", () => {
+  const corner = vm.runInContext("soundButtonCorner", context);
+  assert.equal(corner(["top-left", "top-right", "bottom-right"], "top-right"), "bottom-left");
+  assert.equal(corner(["top-left", "bottom-left"], "top-right"), "bottom-right");
+  assert.equal(corner(["bottom-left"], null), "top-left");
+  assert.equal(corner(["top-left", "top-right", "bottom-left", "bottom-right"], null), "top-left");
+});
