@@ -84,6 +84,8 @@ for version-specific upgrade instructions.
 <a id="-album-slideshow-card"></a>
 ## Add a Dashboard Card
 
+<img src="https://raw.githubusercontent.com/eyalgal/album_slideshow/main/docs/weather-caption.jpg" alt="Photo with a weather icon and temperature, a clock, and the photo's date and place" width="500">
+
 In the dashboard editor, add an **Album Slideshow** card and select your camera.
 The card is registered automatically; no separate HACS frontend installation or
 manual resource entry is needed. Hard-refresh the dashboard after an upgrade
