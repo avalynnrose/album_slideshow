@@ -33,6 +33,7 @@ The following entities allow you to adjust slideshow behavior without restarting
 | Select | Date filter | off | off, last_7_days, last_30_days, last_365_days, custom_days, this_month, this_year, on_this_day | Restrict the slideshow to a date window based on photo capture date |
 | Text | Pair divider color | #FFFFFF | Hex, named colors, transparent | Divider color between paired images |
 | Switch | Pause slideshow | off | on / off | Hold the current frame; advances pause until turned off |
+| Switch | Pause when not viewed | off | on / off | Hold the slideshow while no dashboard card or camera view is showing it; see [Pause and navigation](#pause-and-navigation) |
 | Switch | Crop debug overlay | off | on / off | Show detected face boxes, preferred padding, and the original photo center; see [crop diagnostics](provider-setup.md#crop-debug-overlay) |
 
 ## Custom Lookback and Age Bias
@@ -115,6 +116,30 @@ When transparency is used, the integration outputs PNG to preserve alpha.
 - A configurable navigation buffer retains previous frames and pre-renders upcoming frames (even in random order)
 - Pause state survives Home Assistant restarts
 
+### Pause When Not Viewed
+
+The slideshow runs inside Home Assistant, not in the browser, so by default it
+keeps advancing, downloading and preparing slides even when no dashboard is
+open. Turn on **Pause when not viewed** to stop that:
+
+- While a slideshow card is on screen, it checks in with the integration every
+  20 seconds. Cards only check in while this setting is on. A live camera view (the more-info dialog, or a picture card in
+  live mode) counts for as long as it stays open.
+- After a minute with no check-ins, the slideshow holds its current slide.
+  Once the upcoming-slide buffer is full, nothing more is downloaded or
+  rendered until it resumes. Scheduled album refreshes still run.
+- As soon as a card opens again, the slideshow resumes and the slide it shows
+  gets a full interval.
+- A card in a background browser tab, a closed app, or a device whose screen is
+  locked doesn't count. A dimmed screen or a kiosk screensaver drawn over the
+  page still counts, because the page is still visible to the browser.
+- Plain camera snapshots don't count (for example, a picture card that isn't
+  in live mode, or something casting the camera image). Leave the setting off
+  if those are how you show the slideshow.
+- It doesn't change the **Pause slideshow** switch. Previous and Next still
+  work while it's held. The camera's `paused_unwatched` attribute shows when
+  this setting is holding the slideshow.
+
 For the on-card toolbar and its temporary display hold, see the
 [Card Guide](card-guide.md#hide-photos-from-a-slideshow).
 
@@ -190,6 +215,8 @@ The slideshow camera exposes per-frame metadata as attributes (use with `state_a
 | `video_content_type` | string \| null | Content type of the stream, such as `video/mp4` |
 | `pair_orientation` | string \| null | How a paired slide is split: `horizontal` (left/right) or `vertical` (top/bottom). `null` for single slides. |
 | `paused` | bool | Whether the slideshow is paused |
+| `pause_when_unwatched` | bool | Whether the **Pause when not viewed** switch is on; cards only check in while it is |
+| `paused_unwatched` | bool | Whether **Pause when not viewed** is holding the slideshow because nothing is showing it |
 | `date_filter` | string | Active date filter mode |
 | `custom_lookback_days` | integer | Number of days used by the custom date filter |
 | `shuffle_age_bias` | integer | Signed age preference in Random order; 0 means the original neutral shuffle |

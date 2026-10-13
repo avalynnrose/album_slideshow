@@ -22,6 +22,7 @@ from .const import (
     SERVICE_LIST_HIDDEN_PHOTOS,
 )
 from .store import SlideshowStore
+from .viewers import async_register_websocket as async_register_viewer_websocket
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -336,6 +337,7 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """
     hass.data.setdefault(DOMAIN, {})
     await _async_register_card(hass)
+    async_register_viewer_websocket(hass)
 
     async def _retry_lovelace_resource(_event) -> None:
         if hass.data.get(DOMAIN, {}).get("lovelace_resource_registered"):
