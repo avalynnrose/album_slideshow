@@ -271,7 +271,7 @@ Select **Weather** in a caption's **Content > Add** picker, then choose the requ
 `sensor.*` entity. No source is chosen automatically and no new sensor is created.
 
 A weather entity displays its localized condition and current temperature,
-such as "Partly cloudy, 22.5 C". A sensor displays its state with its configured
+such as "Partly cloudy, 22.5 °C". A sensor displays its state with its configured
 units. The caption follows that entity's HA updates, including while a photo
 is paused, without fetching or changing the slide. A missing, unknown, or
 unavailable source leaves the weather line hidden. Other selected caption
@@ -281,9 +281,9 @@ For a weather entity, **Weather display** (`weather_display`) chooses the format
 
 | `weather_display` | Example |
 |---|---|
-| `condition_temperature` (default) | Partly cloudy, 22.5 C |
-| `icon_temperature` | A colored partly cloudy icon, then 22.5 C |
-| `temperature` | 22.5 C |
+| `condition_temperature` (default) | Partly cloudy, 22.5 °C |
+| `icon_temperature` | A colored partly cloudy icon, then 22.5 °C |
+| `temperature` | 22.5 °C |
 
 The icon scales with the caption's font size and gets a drop shadow when
 **Text shadow** is on. After sunset (from `sun.sun`), partly cloudy shows a
