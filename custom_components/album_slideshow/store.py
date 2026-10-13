@@ -56,6 +56,9 @@ class SlideshowStore:
     # Pause toggle - when True, the slideshow holds on the current frame.
     paused: bool = False
 
+    # Hold the slideshow while no dashboard card or live stream is showing it.
+    pause_when_unwatched: bool = False
+
     # Draw face boxes, a centre crosshair and a crop summary on each slide.
     face_debug: bool = False
 

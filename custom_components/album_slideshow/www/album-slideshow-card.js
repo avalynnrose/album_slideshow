@@ -46,6 +46,11 @@ const TRANSITIONS = new Set(["random", "none", ...ANIMATED_TRANSITIONS]);
 
 const FIT_MODES = new Set(["auto", "cover", "contain"]);
 
+// While on screen, the card tells the integration it is being viewed so
+// "Pause when not viewed" can hold the slideshow when nobody is looking.
+// Matches VIEWER_HEARTBEAT_SECONDS in const.py.
+const VIEWER_HEARTBEAT_MS = 20000;
+
 const PHOTO_CONTROL_OPTIONS = [
   { value: "off", label: "Off" },
   { value: "on_demand", label: "On demand" },
@@ -751,11 +756,16 @@ function createAlbumSlideshowCardClass(Base) {
     }
     this._captionResizeObserver ??= new ResizeObserver(() => this._fitCaptions());
     this._captionResizeObserver.observe(this);
+    this._onVisibilityChange ??= () => this._syncViewerHeartbeat();
+    globalThis.document?.addEventListener?.("visibilitychange", this._onVisibilityChange);
     this._maybeSwap();
+    this._syncViewerHeartbeat();
   }
 
   disconnectedCallback() {
     this._captionResizeObserver?.disconnect();
+    globalThis.document?.removeEventListener?.("visibilitychange", this._onVisibilityChange);
+    this._syncViewerHeartbeat();
     clearTimeout(this._captionClockTimer);
     this._captionClockTimer = null;
     this._cancelControlNavigation();
@@ -773,12 +783,33 @@ function createAlbumSlideshowCardClass(Base) {
     this._hass = hass;
     if (!this._rendered) return;
     this._maybeSwap();
+    this._syncViewerHeartbeat();
     if (this._captionData && this._captionConfigs().some((cap) => cap.show.includes("weather") && cap.weather_entity &&
       (previous?.states?.[cap.weather_entity] !== hass.states?.[cap.weather_entity] || previous?.locale !== hass.locale ||
         (cap.weather_display === "icon_temperature" &&
           previous?.states?.["sun.sun"]?.state !== hass.states?.["sun.sun"]?.state)))) {
       this._renderCaptions(this._captionData, false);
     }
+  }
+
+  /** Check in while this card is on a visible page and Pause when not viewed is on. */
+  _syncViewerHeartbeat() {
+    const attrs = this._hass?.states?.[this._config?.entity]?.attributes;
+    const entryId = attrs?.pause_when_unwatched ? attrs.entry_id : null;
+    if (!this.isConnected || globalThis.document?.visibilityState === "hidden" || !entryId) {
+      clearInterval(this._viewerTimer);
+      this._viewerTimer = null;
+      this._viewerEntryId = null;
+      return;
+    }
+    if (this._viewerTimer && this._viewerEntryId === entryId) return;
+    clearInterval(this._viewerTimer);
+    this._viewerEntryId = entryId;
+    // Errors (reconnecting, or an older integration) are retried next beat.
+    const beat = () => this._hass?.callWS?.({ type: "album_slideshow/viewer_heartbeat", entry_id: entryId })
+      ?.catch?.(() => {});
+    beat();
+    this._viewerTimer = setInterval(beat, VIEWER_HEARTBEAT_MS);
   }
 
   _resolvedFit(attrs) {
@@ -1895,6 +1926,7 @@ const CAPTION_DEFAULTS = {
 // service call. Buttons are handled separately (see LIVE_ACTIONS).
 const LIVE_FIELDS = [
   "paused",
+  "pause_when_unwatched",
   "date_filter",
   "custom_lookback_days",
   "shuffle_age_bias",
@@ -1909,6 +1941,7 @@ const LIVE_FIELDS = [
 
 const LIVE_SUFFIX = {
   paused: "_paused",
+  pause_when_unwatched: "_pause_when_unwatched",
   date_filter: "_date_filter",
   custom_lookback_days: "_custom_lookback_days",
   shuffle_age_bias: "_shuffle_age_bias",
@@ -1926,6 +1959,7 @@ const LIVE_SUFFIX = {
 
 const LIVE_LABELS = {
   live_paused: "Pause slideshow",
+  live_pause_when_unwatched: "Pause when not viewed",
   live_date_filter: "Date filter",
   live_custom_lookback_days: "Custom lookback (days)",
   live_shuffle_age_bias: "Shuffle age bias (older - / newer +)",
@@ -2085,8 +2119,8 @@ function createAlbumSlideshowCardEditorClass(Base) {
   _liveSchema() {
     const s = this._siblings || {};
     const items = [];
-    if (s.paused) {
-      items.push({ name: "live_paused", selector: { boolean: {} } });
+    for (const field of ["paused", "pause_when_unwatched"]) {
+      if (s[field]) items.push({ name: `live_${field}`, selector: { boolean: {} } });
     }
     for (const [field, id] of [
       ["date_filter", s.date_filter],
@@ -2639,9 +2673,11 @@ function createAlbumSlideshowCardEditorClass(Base) {
     const out = {};
     if (!s || !this._hass) return out;
     const st = (id) => (id ? this._hass.states[id] : null);
-    if (s.paused) {
-      const e = st(s.paused);
-      out.live_paused = !!e && e.state === "on";
+    for (const f of ["paused", "pause_when_unwatched"]) {
+      if (s[f]) {
+        const e = st(s[f]);
+        out[`live_${f}`] = !!e && e.state === "on";
+      }
     }
     for (const f of ["date_filter", "missing_date_mode", "portrait_mode", "order_mode"]) {
       if (s[f]) {
@@ -2712,6 +2748,8 @@ function createAlbumSlideshowCardEditorClass(Base) {
       caption_font_size: "CSS size, e.g. 14px, 1.1em.",
       live_paused:
         "These control the Album Slideshow integration directly and apply everywhere this album is shown, not only this card.",
+      live_pause_when_unwatched:
+        "Hold the slideshow when no dashboard card or camera view has shown it for a minute; it resumes as soon as one opens.",
       live_missing_date_mode:
         "What a date filter does with photos that have no capture date: use the upload date, keep them, or drop them.",
     };
@@ -2904,7 +2942,7 @@ function createAlbumSlideshowCardEditorClass(Base) {
     if (!s || !hass) return;
     const id = s[field];
     if (!id) return;
-    if (field === "paused") {
+    if (field === "paused" || field === "pause_when_unwatched") {
       hass.callService("switch", value ? "turn_on" : "turn_off", {
         entity_id: id,
       });
