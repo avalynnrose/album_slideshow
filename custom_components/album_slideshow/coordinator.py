@@ -121,6 +121,10 @@ from .store import SlideshowStore
 
 _LOGGER = logging.getLogger(__name__)
 _GOOGLE_METADATA_INTERVAL = 1.0
+# Signed iCloud links: renew this many seconds before they expire, and refresh
+# the album for new links at most this often.
+_LINK_EXPIRY_MARGIN = 60
+_LINK_RENEW_COOLDOWN = 60.0
 
 
 @dataclass
@@ -2031,7 +2035,8 @@ class AlbumCoordinator(DataUpdateCoordinator):
         the newer CloudKit backend used by iOS 26/macOS 26 share links. Both
         carry capture date and caption inline, so there is no enrichment pass.
         Signed image URLs are resolved up front and expire after a while, so
-        they are refreshed on every album refresh (like Google Photos).
+        they are refreshed on every album refresh, and sooner when one expires
+        (see ``async_renew_link``).
         """
         from . import icloud as icloud_api
 
@@ -2126,6 +2131,65 @@ class AlbumCoordinator(DataUpdateCoordinator):
             "title": self.entry.title,
             "items": items,
         }
+
+    @property
+    def signed_links(self) -> bool:
+        """True when image links expire and each refresh signs them again."""
+        return self.provider == PROVIDER_ICLOUD
+
+    def download_key(self, url: str) -> str:
+        """Cache key for a downloaded image that survives its link being re-signed."""
+        from . import icloud as icloud_api
+
+        return f"icloud:{icloud_api.link_key(url)}" if self.signed_links else url
+
+    def link_expired(self, url: str) -> bool:
+        """True once a signed link is about to expire."""
+        if not self.signed_links:
+            return False
+        from . import icloud as icloud_api
+
+        expires_at = icloud_api.link_expires_at(url)
+        return expires_at is not None and time.time() >= expires_at - _LINK_EXPIRY_MARGIN
+
+    async def async_renew_link(self, url: str) -> str | None:
+        """Return a newer link for the same photo, refreshing the album if needed.
+
+        iCloud links expire long before the album's next scheduled refresh
+        (CloudKit links after about 15 minutes). Concurrent callers share one
+        refresh, and refreshes run at most once a minute. Returns ``None``
+        when there is no newer link.
+        """
+        if not self.signed_links:
+            return None
+        fresh = self._current_link(url)
+        if fresh == url:
+            task = getattr(self, "_link_renewal", None)
+            if task is None:
+                renewed_at = getattr(self, "_links_renewed_at", None)
+                if renewed_at is not None and time.monotonic() - renewed_at < _LINK_RENEW_COOLDOWN:
+                    return None
+                self._links_renewed_at = time.monotonic()
+                _LOGGER.debug("iCloud photo links expired, refreshing the album")
+                task = self._link_renewal = self.hass.async_create_background_task(
+                    self.async_refresh(),
+                    name=f"album_slideshow_renew_links_{self.entry.entry_id}",
+                )
+                task.add_done_callback(lambda _task: setattr(self, "_link_renewal", None))
+            # Shielded: a dropped preload must not cancel a refresh others await.
+            await asyncio.shield(task)
+            fresh = self._current_link(url)
+        return fresh if fresh != url else None
+
+    def _current_link(self, url: str) -> str | None:
+        """The album's current link for the photo behind ``url``, if still listed."""
+        from . import icloud as icloud_api
+
+        key = icloud_api.link_key(url)
+        for item in (getattr(self, "data", None) or {}).get("items") or ():
+            if icloud_api.link_key(item.url) == key:
+                return item.url
+        return None
 
     async def _update_synology(self) -> dict[str, Any]:
         """Fetch photos from a Synology Photos library via its web API.

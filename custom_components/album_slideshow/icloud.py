@@ -38,7 +38,7 @@ import logging
 import re
 from time import monotonic
 from typing import Any
-from urllib.parse import quote, urlencode
+from urllib.parse import parse_qs, quote, urlencode, urlsplit
 
 from aiohttp import (
     ClientConnectionError,
@@ -282,6 +282,20 @@ def build_image_url(item: dict[str, Any]) -> str | None:
         return None
     scheme = item.get("scheme") or "https"
     return f"{scheme}://{location}{path}"
+
+
+def link_key(url: str) -> str:
+    """Identify a signed image link by its path, which survives re-signing."""
+    return urlsplit(url).path or url
+
+
+def link_expires_at(url: str) -> int | None:
+    """Epoch seconds when a signed image link stops working (its ``e`` param)."""
+    values = parse_qs(urlsplit(url).query).get("e")
+    try:
+        return int(values[0]) if values else None
+    except ValueError:
+        return None
 
 
 def parse_photo_meta(photo: dict[str, Any]) -> dict[str, Any]:

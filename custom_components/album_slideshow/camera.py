@@ -53,6 +53,14 @@ _MAX_DOWNLOAD_BYTES = 64 * 1024 * 1024
 # still rejected early.
 _ACCEPTED_IMAGE_PREFIX = ("image/",)
 
+# How signed links (iCloud) answer once their signature has expired.
+_EXPIRED_LINK_STATUSES = frozenset({403, 410})
+
+
+class _ExpiredLink(Exception):
+    """A signed image link was rejected because it expired."""
+
+
 # Max candidates we'll scan when searching for a mismatched-orientation
 # pairing partner. Metadata-only checks are nearly free; decode-only checks
 # (no metadata available) are expensive.
@@ -1886,7 +1894,8 @@ class AlbumSlideshowCamera(Camera):
         return idx
 
     async def _fetch_bytes(self, url: str) -> bytes | None:
-        cached = self._download_cache.get(url)
+        key = self._download_key(url)
+        cached = self._download_cache.get(key)
         if cached is not None:
             return cached
 
@@ -1910,12 +1919,35 @@ class AlbumSlideshowCamera(Camera):
             if data is None:
                 return None
         else:
-            data = await self._http_get(url)
+            data = await self._fetch_remote(url)
             if data is None:
                 return None
 
-        self._download_cache.put(url, data)
+        self._download_cache.put(key, data)
         return data
+
+    def _signed_links(self) -> bool:
+        return getattr(self.coordinator, "signed_links", False) is True
+
+    def _download_key(self, url: str) -> str:
+        if self._signed_links() and url.startswith("http"):
+            return self.coordinator.download_key(url)
+        return url
+
+    async def _fetch_remote(self, url: str) -> bytes | None:
+        """Download a remote image, renewing its signed link once it expires."""
+        if not self._signed_links():
+            return await self._http_get(url)
+        if self.coordinator.link_expired(url):
+            url = await self.coordinator.async_renew_link(url) or url
+        try:
+            return await self._http_get(url, signed=True)
+        except _ExpiredLink:
+            fresh = await self.coordinator.async_renew_link(url)
+        if fresh is None:
+            _LOGGER.debug("Album Slideshow: expired image link, no newer one yet: %s", url)
+            return None
+        return await self._http_get(fresh)
 
     async def _provider_bytes(self, url: str) -> bytes | None:
         """Ask the coordinator for decrypted bytes behind a provider URL."""
@@ -1958,8 +1990,12 @@ class AlbumSlideshowCamera(Camera):
             return dict(params)
         return None
 
-    async def _http_get(self, url: str) -> bytes | None:
-        """Fetch one remote image with validation and a hard timeout."""
+    async def _http_get(self, url: str, *, signed: bool = False) -> bytes | None:
+        """Fetch one remote image with validation and a hard timeout.
+
+        With ``signed``, an expired link raises ``_ExpiredLink`` instead of
+        logging a failure, so the caller can renew it.
+        """
         session = async_get_clientsession(
             self.hass,
             verify_ssl=getattr(self.coordinator, "image_request_verify_ssl", True),
@@ -2021,6 +2057,8 @@ class AlbumSlideshowCamera(Camera):
                         chunks.append(chunk)
                     return b"".join(chunks)
         except ClientResponseError as err:
+            if signed and err.status in _EXPIRED_LINK_STATUSES:
+                raise _ExpiredLink from None
             # str(err) includes the full request URL, fetch-time params and all.
             _LOGGER.warning(
                 "Album Slideshow: failed to fetch image %s: HTTP %s", url, err.status

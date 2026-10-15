@@ -354,8 +354,11 @@ way anyone with the link can view it on the web.
   Photos).
 - Contributors can keep adding photos to the album; new ones show up on the next
   refresh.
-- The image URLs Apple hands out are signed and expire after about a day, so the
-  integration re-fetches them on every album refresh.
+- The image links Apple hands out are signed and expire: after about 15 minutes
+  for newer `photos.icloud.com/shared/album/...` albums, and a few hours for
+  `www.icloud.com/sharedalbum/...` albums. When a link expires, the integration
+  gets new links for the album right away, and photos it has already downloaded
+  are reused instead of downloaded again.
 - Image downloads marked `application/octet-stream` are accepted only from
   `icloud-content.com` and its subdomains, checked after redirects. Download
   limits and image decoding checks still apply. HEIC/HEIF decoding depends on
