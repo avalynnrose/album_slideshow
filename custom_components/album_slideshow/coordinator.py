@@ -318,20 +318,26 @@ def _tag_album(items: list[MediaItem], album_url: str) -> None:
 def _merge_album_items(item_lists: list[list[MediaItem]]) -> list[MediaItem]:
     """Combine several albums' items into one list without duplicates.
 
-    The same photo can be in more than one shared album. It is matched by
-    Google's media key (``source_id``) and, failing that, by the stable part
-    of its URL. The first album that contains a photo keeps it, so album
-    order decides provenance; overall order is album by album.
+    The same photo in two shared albums gets a different media key and URL in
+    each, so it is matched by when it was taken, its size and its file size;
+    photos without a date fall back to the media key or the stable part of
+    the URL. Only photos already seen in an earlier album are dropped, so
+    burst shots within one album stay. The first album that contains a photo
+    keeps it; overall order is album by album.
     """
     merged: list[MediaItem] = []
-    seen: set[str] = set()
+    seen: set[tuple] = set()
     for items in item_lists:
+        album_keys: set[tuple] = set()
         for item in items:
-            key = item.source_id or _photo_base_key(item.url) or item.url
-            if key in seen:
+            keys = {("id", item.source_id or _photo_base_key(item.url) or item.url)}
+            if item.captured_at and item.width and item.height:
+                keys.add(("shot", item.captured_at, item.width, item.height, item.byte_size))
+            if keys & seen:
                 continue
-            seen.add(key)
+            album_keys |= keys
             merged.append(item)
+        seen |= album_keys
     return merged
 
 

@@ -88,6 +88,31 @@ def test_merge_falls_back_to_the_url_when_there_is_no_media_key():
     assert len(_merge_album_items([[a], [b]])) == 1
 
 
+def _shot(source_id, taken, width=4032, height=3024, byte_size=2_500_000):
+    return MediaItem(
+        url=f"https://lh3.googleusercontent.com/pw/{source_id}=w1920-h1080",
+        width=width, height=height, mime_type=None, filename=None,
+        captured_at=taken, byte_size=byte_size, source_id=source_id,
+    )
+
+
+def test_merge_matches_a_photo_in_two_albums_by_time_taken_and_size():
+    # Each shared album gives the same photo its own media key and URL.
+    first = [_shot("a-1", 1_700_000_000_000), _shot("a-2", 1_700_000_100_000)]
+    second = [
+        _shot("b-1", 1_700_000_000_000),
+        _shot("b-2", 1_700_000_000_000, width=3024, height=4032),
+        _shot("b-3", 1_700_000_000_000, byte_size=2_400_000),
+    ]
+    merged = _merge_album_items([first, second])
+    assert [p.source_id for p in merged] == ["a-1", "a-2", "b-2", "b-3"]
+
+
+def test_merge_keeps_burst_shots_within_one_album():
+    album = [_shot("burst-1", 1_700_000_000_000), _shot("burst-2", 1_700_000_000_000)]
+    assert len(_merge_album_items([album, [_shot("other", 1_700_000_500_000)]])) == 3
+
+
 # -- coordinator fetch ------------------------------------------------------
 
 def _coordinator(urls, *, data=None, cached=None):

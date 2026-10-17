@@ -48,9 +48,10 @@ hidden photos.
 
 Photos from all albums are combined into one pool before ordering, date
 filters and portrait pairing are applied. A photo that is in more than one of
-the albums is shown once. With **Album order**, photos follow the order of the
-links, album by album. Photo metadata is requested from the album each photo
-came from.
+the albums is shown once; it's recognized by when it was taken and its size,
+since Google gives each album's copy its own ID. With **Album order**, photos
+follow the order of the links, album by album. Photo metadata is requested
+from the album each photo came from.
 
 If one album cannot be loaded during a refresh, its photos from the last
 successful refresh are kept and the other albums update normally; the
