@@ -10,10 +10,10 @@
       },
       "google_shared": {
         "title": "Google Photos",
-        "description": "Paste a Google Photos shared album link. To combine several shared albums into one slideshow, paste one link per line.",
+        "description": "Paste a Google Photos shared album link. To combine several shared albums into one slideshow, use Add Shared album link for each one.",
         "data": {
           "album_name": "Album name",
-          "album_url": "Shared album link(s)"
+          "album_url": "Shared album link"
         }
       },
       "local_folder": {
@@ -250,9 +250,9 @@
       },
       "google_albums": {
         "title": "Shared albums",
-        "description": "One Google Photos shared album link per line. Photos from all albums are combined into one slideshow; a photo that is in more than one album is shown once. Settings and hidden photos are kept when you change this list.",
+        "description": "Add or remove Google Photos shared album links. Photos from all albums are combined into one slideshow; a photo that is in more than one album is shown once. Settings and hidden photos are kept when you change this list.",
         "data": {
-          "album_urls": "Shared album links"
+          "album_urls": "Shared album link"
         }
       }
     },

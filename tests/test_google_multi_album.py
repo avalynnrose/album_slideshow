@@ -268,7 +268,7 @@ def _config_flow(monkeypatch):
 
 def test_setup_with_one_link_stores_the_same_data_as_before(monkeypatch):
     flow = _config_flow(monkeypatch)
-    result = asyncio.run(flow.async_step_google_shared({CONF_ALBUM_NAME: "Frame", CONF_ALBUM_URL: f" {A} "}))
+    result = asyncio.run(flow.async_step_google_shared({CONF_ALBUM_NAME: "Frame", CONF_ALBUM_URL: [f" {A} "]}))
     assert result["data"] == {
         CONF_PROVIDER: PROVIDER_GOOGLE_SHARED, CONF_ALBUM_URL: A, CONF_ALBUM_NAME: "Frame",
     }
@@ -277,15 +277,29 @@ def test_setup_with_one_link_stores_the_same_data_as_before(monkeypatch):
 
 def test_setup_with_several_links(monkeypatch):
     flow = _config_flow(monkeypatch)
-    result = asyncio.run(flow.async_step_google_shared({CONF_ALBUM_NAME: "Frame", CONF_ALBUM_URL: f"{A}\n{B}"}))
+    result = asyncio.run(flow.async_step_google_shared({CONF_ALBUM_NAME: "Frame", CONF_ALBUM_URL: [A, B]}))
     assert result["data"][CONF_ALBUM_URL] == A
     assert result["data"][CONF_ALBUM_URLS] == [A, B]
 
 
-@pytest.mark.parametrize("text", ["", "not a link", f"{A}\nhttps://example.com/album"])
-def test_setup_rejects_anything_that_is_not_a_shared_album_link(monkeypatch, text):
+def test_each_link_gets_its_own_field_with_an_add_button(monkeypatch):
+    form = asyncio.run(_config_flow(monkeypatch).async_step_google_shared())
+    field = next(key for key in form["data_schema"].schema if str(key) == CONF_ALBUM_URL)
+    assert form["data_schema"].schema[field].config == {"multiple": True}
+    assert field.default() == [""]
+
+
+@pytest.mark.parametrize("value", [f"{A}, {B}", [f"{A}\n{B}"], [A, "", B]])
+def test_links_typed_into_one_field_are_split(monkeypatch, value):
     flow = _config_flow(monkeypatch)
-    result = asyncio.run(flow.async_step_google_shared({CONF_ALBUM_NAME: "Frame", CONF_ALBUM_URL: text}))
+    result = asyncio.run(flow.async_step_google_shared({CONF_ALBUM_NAME: "Frame", CONF_ALBUM_URL: value}))
+    assert result["data"][CONF_ALBUM_URLS] == [A, B]
+
+
+@pytest.mark.parametrize("links", [[], ["not a link"], [A, "https://example.com/album"]])
+def test_setup_rejects_anything_that_is_not_a_shared_album_link(monkeypatch, links):
+    flow = _config_flow(monkeypatch)
+    result = asyncio.run(flow.async_step_google_shared({CONF_ALBUM_NAME: "Frame", CONF_ALBUM_URL: links}))
     assert result["type"] == "form"
     assert result["errors"] == {CONF_ALBUM_URL: "invalid_album_url"}
 
@@ -319,17 +333,17 @@ def _base_data(**extra):
     return {CONF_PROVIDER: PROVIDER_GOOGLE_SHARED, CONF_ALBUM_NAME: "Frame", CONF_ALBUM_URL: A, **extra}
 
 
-def test_album_editor_is_prefilled_one_link_per_line(monkeypatch):
+def test_album_editor_is_prefilled_with_one_field_per_link(monkeypatch):
     flow, _ = _options_flow(monkeypatch, _base_data(**{CONF_ALBUM_URLS: [A, B]}))
     form = asyncio.run(flow.async_step_google_albums())
     (marker,) = form["data_schema"].schema
     assert str(marker) == CONF_ALBUM_URLS
-    assert marker.default() == f"{A}\n{B}"
+    assert marker.default() == [A, B]
 
 
 def test_adding_albums_updates_the_entry_and_clears_the_cache(monkeypatch):
     flow, cleared = _options_flow(monkeypatch, _base_data())
-    result = asyncio.run(flow.async_step_google_albums({CONF_ALBUM_URLS: f"{A}\n{B}\n{C}"}))
+    result = asyncio.run(flow.async_step_google_albums({CONF_ALBUM_URLS: [A, B, C]}))
 
     assert result["type"] == "create_entry"
     assert result["data"] == {"google_metadata": True}  # options untouched
@@ -340,14 +354,14 @@ def test_adding_albums_updates_the_entry_and_clears_the_cache(monkeypatch):
 
 def test_going_back_to_one_album_drops_the_list(monkeypatch):
     flow, _ = _options_flow(monkeypatch, _base_data(**{CONF_ALBUM_URLS: [A, B]}))
-    asyncio.run(flow.async_step_google_albums({CONF_ALBUM_URLS: B}))
+    asyncio.run(flow.async_step_google_albums({CONF_ALBUM_URLS: [B]}))
     (update,) = flow.hass.config_entries.updates
     assert update["data"] == {**_base_data(), CONF_ALBUM_URL: B}
 
 
 def test_saving_unchanged_links_does_not_touch_the_entry(monkeypatch):
     flow, cleared = _options_flow(monkeypatch, _base_data(**{CONF_ALBUM_URLS: [A, B]}))
-    result = asyncio.run(flow.async_step_google_albums({CONF_ALBUM_URLS: f"{A}\n{B}"}))
+    result = asyncio.run(flow.async_step_google_albums({CONF_ALBUM_URLS: [A, B]}))
     assert result["type"] == "create_entry"
     assert flow.hass.config_entries.updates == []
     assert cleared == []
@@ -355,7 +369,7 @@ def test_saving_unchanged_links_does_not_touch_the_entry(monkeypatch):
 
 def test_album_editor_rejects_bad_links(monkeypatch):
     flow, cleared = _options_flow(monkeypatch, _base_data())
-    result = asyncio.run(flow.async_step_google_albums({CONF_ALBUM_URLS: f"{A}\nnope"}))
+    result = asyncio.run(flow.async_step_google_albums({CONF_ALBUM_URLS: [A, "nope"]}))
     assert result["errors"] == {CONF_ALBUM_URLS: "invalid_album_url"}
     assert flow.hass.config_entries.updates == []
     assert cleared == []
@@ -391,7 +405,7 @@ def test_albums_are_not_changed_when_the_old_cache_cannot_be_cleared(monkeypatch
         raise OSError("disk full")
 
     monkeypatch.setattr(cf, "_async_clear_item_cache", fail)
-    result = asyncio.run(flow.async_step_google_albums({CONF_ALBUM_URLS: f"{A}\n{B}"}))
+    result = asyncio.run(flow.async_step_google_albums({CONF_ALBUM_URLS: [A, B]}))
 
     assert result["type"] == "form"
     assert result["errors"] == {"base": "google_cache_clear_failed"}

@@ -41,10 +41,10 @@ images, not videos. Install the integration first using the
 ### Combining Several Albums
 
 One slideshow can show photos from several shared albums. When adding the
-integration, paste one shared album link per line. To change the albums of an
-existing slideshow, open **Configure > Shared albums** and add, remove or
-reorder links, one per line. The slideshow keeps its entities, settings and
-hidden photos.
+integration, paste the first shared album link, then use **Add Shared album
+link** for each extra album. To change the albums of an existing slideshow, open
+**Configure > Shared albums** and add or remove links. The slideshow keeps its
+entities, settings and hidden photos.
 
 Photos from all albums are combined into one pool before ordering, date
 filters and portrait pairing are applied. A photo that is in more than one of

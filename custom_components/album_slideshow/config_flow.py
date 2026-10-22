@@ -153,13 +153,13 @@ def _normalize_local_path(hass, path: str) -> str:
 ALBUM_URL_RE = re.compile(r"^https?://photos\.app\.goo\.gl/[^/]+/?$")
 
 def _album_urls_selector() -> Any:
-    """Multi-line text box for one or more shared-album links (one per line)."""
-    return selector.TextSelector(selector.TextSelectorConfig(multiline=True))
+    """One text field per shared-album link, with an Add button for more."""
+    return selector.TextSelector(selector.TextSelectorConfig(multiple=True))
 
 
-def _validate_album_urls(text: Any) -> tuple[list[str], str | None]:
+def _validate_album_urls(value: Any) -> tuple[list[str], str | None]:
     """Parse the album-links field: (links, error key or None)."""
-    urls = parse_album_urls(text if isinstance(text, str) else "")
+    urls = parse_album_urls(value if isinstance(value, (str, list, tuple)) else "")
     if not urls or not all(ALBUM_URL_RE.match(url) for url in urls):
         return urls, "invalid_album_url"
     return urls, None
@@ -521,7 +521,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         schema = vol.Schema(
             {
                 vol.Required(CONF_ALBUM_NAME): str,
-                vol.Required(CONF_ALBUM_URL): _album_urls_selector(),
+                # One empty field to start with; Add appends more.
+                vol.Required(CONF_ALBUM_URL, default=[""]): _album_urls_selector(),
             }
         )
         return self.async_show_form(step_id="google_shared", data_schema=schema, errors=errors)
@@ -1543,7 +1544,7 @@ class GoogleOptionsFlow(config_entries.OptionsFlow):
     async def async_step_google_albums(
         self, user_input: dict[str, Any] | None = None,
     ) -> FlowResult:
-        """Add, remove or reorder the shared albums this slideshow combines.
+        """Add or remove the shared albums this slideshow combines.
 
         The links live in ``entry.data`` (the coordinator reads them from
         there), so they are written back into the entry data and the update
@@ -1584,7 +1585,7 @@ class GoogleOptionsFlow(config_entries.OptionsFlow):
             step_id="google_albums",
             data_schema=vol.Schema({
                 vol.Required(
-                    CONF_ALBUM_URLS, default="\n".join(current),
+                    CONF_ALBUM_URLS, default=current,
                 ): _album_urls_selector(),
             }),
             errors=errors,
