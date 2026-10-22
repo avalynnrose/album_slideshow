@@ -1536,6 +1536,12 @@ class GoogleOptionsFlow(config_entries.OptionsFlow):
     """Edit a Google entry's shared albums and its metadata enrichment."""
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        return await self.async_step_google_menu()
+
+    async def async_step_google_menu(
+        self, user_input: dict[str, Any] | None = None,
+    ) -> FlowResult:
+        # Home Assistant rejects a menu whose step_id has no matching step method.
         return self.async_show_menu(
             step_id="google_menu",
             menu_options=["google_albums", "google_metadata"],

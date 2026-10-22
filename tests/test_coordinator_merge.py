@@ -209,6 +209,7 @@ def test_google_options_open_with_albums_and_metadata_menu():
     flow.async_show_menu = lambda **kwargs: kwargs
     menu = asyncio.run(flow.async_step_init())
     assert menu == {"step_id": "google_menu", "menu_options": ["google_albums", "google_metadata"]}
+    assert hasattr(flow, f"async_step_{menu['step_id']}")
     for option in menu["menu_options"]:
         assert hasattr(flow, f"async_step_{option}")
 
